@@ -48,8 +48,10 @@ def compress_pdf_lossless(input_path: Path, output_path: Path) -> bool:
     writer = PdfWriter()
 
     for page in reader.pages:
-        page.compress_content_streams()
         writer.add_page(page)
+
+    for page in writer.pages:
+        page.compress_content_streams()
 
     writer.compress_identical_objects(remove_identicals=True, remove_orphans=True)
 
@@ -67,22 +69,20 @@ def compress_pdf_lossless(input_path: Path, output_path: Path) -> bool:
     return False
 
 
-def compress_pdf_render(input_path: Path, output_path: Path, quality: int, dpi: int):
+def compress_pdf_render(input_path: Path, output_path: Path, quality: int, dpi: int, grayscale: bool = False):
     """Render PDF pages to JPEG with pdftocairo, then reassemble with ImageMagick."""
     with tempfile.TemporaryDirectory() as tmpdir:
         # Render each page to JPEG
-        subprocess.run(
-            [
-                "pdftocairo",
-                "-jpeg",
-                "-jpegopt", f"quality={quality}",
-                "-r", str(dpi),
-                str(input_path),
-                os.path.join(tmpdir, "page"),
-            ],
-            check=True,
-            capture_output=True,
-        )
+        cmd = [
+            "pdftocairo",
+            "-jpeg",
+            "-jpegopt", f"quality={quality}",
+            "-r", str(dpi),
+        ]
+        if grayscale:
+            cmd.append("-gray")
+        cmd += [str(input_path), os.path.join(tmpdir, "page")]
+        subprocess.run(cmd, check=True, capture_output=True)
 
         # Collect rendered pages in sorted order
         pages = sorted(Path(tmpdir).glob("page-*.jpg"))
@@ -100,14 +100,46 @@ def compress_pdf(
     quality: int,
     dpi: int,
     force_render: bool,
+    grayscale: bool = False,
 ):
     """Compress a PDF: try lossless first, fall back to lossy render."""
     if not force_render:
         if compress_pdf_lossless(input_path, output_path):
             return "lossless"
 
-    compress_pdf_render(input_path, output_path, quality, dpi)
+    compress_pdf_render(input_path, output_path, quality, dpi, grayscale)
     return "rendered"
+
+
+def compress_pdf_to_target(
+    input_path: Path,
+    output_path: Path,
+    max_bytes: int,
+    dpi: int,
+    grayscale: bool = False,
+):
+    """Binary search for highest quality that fits under max_bytes.
+
+    Returns the quality value used.
+    """
+    lo, hi = 10, 70
+    best_quality = lo
+
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        compress_pdf_render(input_path, output_path, mid, dpi, grayscale)
+        size = output_path.stat().st_size
+        if size <= max_bytes:
+            best_quality = mid
+            lo = mid + 1
+        else:
+            hi = mid - 1
+
+    # Final render at best quality if needed
+    if best_quality != mid:
+        compress_pdf_render(input_path, output_path, best_quality, dpi, grayscale)
+
+    return best_quality
 
 
 def format_size(size_bytes: int) -> str:
@@ -141,6 +173,14 @@ def main():
         "--force-render", action="store_true",
         help="Skip lossless compression, force lossy render for PDFs",
     )
+    parser.add_argument(
+        "-g", "--grayscale", action="store_true",
+        help="Convert to grayscale (reduces size, ideal for document scans)",
+    )
+    parser.add_argument(
+        "-m", "--max-size", type=float, default=None,
+        help="Target maximum file size in MB (auto-selects best quality)",
+    )
     args = parser.parse_args()
 
     check_dependencies()
@@ -167,39 +207,57 @@ def main():
         original_size = input_path.stat().st_size
 
         try:
+            auto_quality = None
             if ext in (".jpg", ".jpeg"):
                 compress_jpeg(input_path, output_path, args.quality, args.dpi)
                 method = "jpeg→pdf"
+            elif args.max_size is not None:
+                max_bytes = int(args.max_size * 1024 * 1024)
+                auto_quality = compress_pdf_to_target(
+                    input_path, output_path, max_bytes, args.dpi, args.grayscale
+                )
+                method = "auto-fit"
             else:
                 method = compress_pdf(
-                    input_path, output_path, args.quality, args.dpi, args.force_render
+                    input_path, output_path, args.quality, args.dpi,
+                    args.force_render, args.grayscale,
                 )
 
             compressed_size = output_path.stat().st_size
             reduction = (1 - compressed_size / original_size) * 100
 
-            results.append({
+            result = {
                 "input": input_path.name,
                 "output": output_path.name,
                 "original": original_size,
                 "compressed": compressed_size,
                 "reduction": reduction,
                 "method": method,
-            })
+            }
+            if auto_quality is not None:
+                result["auto_quality"] = auto_quality
+            results.append(result)
 
         except Exception as e:
             print(f"Error compressing {filepath}: {e}", file=sys.stderr)
 
     # Print summary
     if results:
-        print(f"\n{'Input':<30} {'Method':<10} {'Original':>10} {'Compressed':>10} {'Reduction':>10}")
-        print("-" * 75)
+        has_auto = any("auto_quality" in r for r in results)
+        header = f"{'Input':<30} {'Method':<10} {'Original':>10} {'Compressed':>10} {'Reduction':>10}"
+        if has_auto:
+            header += f" {'Quality':>8}"
+        print(f"\n{header}")
+        print("-" * (75 + (9 if has_auto else 0)))
         for r in results:
-            print(
+            line = (
                 f"{r['input']:<30} {r['method']:<10} "
                 f"{format_size(r['original']):>10} {format_size(r['compressed']):>10} "
                 f"{r['reduction']:>9.1f}%"
             )
+            if has_auto and "auto_quality" in r:
+                line += f" {r['auto_quality']:>8}"
+            print(line)
     else:
         print("No files were compressed.")
 

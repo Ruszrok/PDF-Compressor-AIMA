@@ -22,7 +22,7 @@ pip install -r requirements.txt
 
 ```bash
 source .venv/bin/activate
-python compress.py [-q QUALITY] [-d DPI] [-o OUTPUT_DIR] [--force-render] file1 file2 ...
+python compress.py [-q QUALITY] [-d DPI] [-o OUTPUT_DIR] [-g] [-m MAX_MB] [--force-render] file1 file2 ...
 ```
 
 ### CLI Flags
@@ -33,6 +33,8 @@ python compress.py [-q QUALITY] [-d DPI] [-o OUTPUT_DIR] [--force-render] file1 
 | `-d` / `--dpi` | 150 | Render DPI for PDF pages |
 | `-o` / `--output-dir` | same as input | Output directory |
 | `--force-render` | off | Skip lossless, force lossy render for PDFs |
+| `-g` / `--grayscale` | off | Convert to grayscale (reduces size, ideal for document scans) |
+| `-m` / `--max-size` | none | Target max file size in MB (auto-selects best quality) |
 
 ### Examples
 
@@ -43,6 +45,8 @@ python compress.py -q 40 large.pdf                   # More aggressive compressi
 python compress.py -q 75 -d 200 important.pdf        # Higher quality
 python compress.py --force-render bloated.pdf         # Force lossy rendering
 python compress.py -o ./output file1.jpg file2.pdf    # Batch, custom output dir
+python compress.py -g --force-render document.pdf     # Grayscale lossy compression
+python compress.py -g -m 2 large.pdf                  # Auto-fit to 2 MB, grayscale
 ```
 
 ## Output
@@ -55,6 +59,7 @@ Files are saved as `{original_name}_compressed.pdf` in the output directory (def
 - **PDF → PDF (two-stage)**:
   1. **Lossless** (pypdf): compress streams, remove duplicates — accepted if <85% of original
   2. **Lossy fallback**: `pdftocairo` renders pages to JPEG, then `magick` reassembles into PDF
+- **Auto-fit** (`--max-size`): binary search for highest JPEG quality that fits under target size
 
 ## Slash Command
 
