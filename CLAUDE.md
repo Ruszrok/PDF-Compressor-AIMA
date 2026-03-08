@@ -13,6 +13,8 @@ Compresses JPEG and PDF files into optimized PDFs suitable for uploading to gove
 ## Setup
 
 ```bash
+git clone <repo-url>
+cd compressor
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
