@@ -1,6 +1,8 @@
-# PDF Compressor
+# PDF Compressor for AIMA Portal / Compressor PDF para Portal AIMA
 
-A toolkit for compressing JPEG and PDF files into optimized PDFs suitable for uploading to government portals (AIMA, etc.). Includes Claude Code integration with slash commands for interactive compression workflows.
+Compress and merge PDF/JPEG documents for uploading to the AIMA residence permit renewal portal ([portal-renovacoes.aima.gov.pt](https://portal-renovacoes.aima.gov.pt)). Built for Portugal's autorização de residência (residence permit) renewal process.
+
+Compressor e unificador de documentos PDF/JPEG para upload no portal de renovações AIMA. Ferramenta para o processo de renovação de autorização de residência em Portugal.
 
 ## Features
 
@@ -59,14 +61,14 @@ python compress.py -E gs -g document.pdf              # Ghostscript (preserves v
 
 ```bash
 source .venv/bin/activate
-python compress_aima.py ~/Documents/aima-docs --prefix z5 --budget-bytes 2000000 --open
+python compress_aima.py ~/Documents/aima-docs --prefix doc --budget-bytes 2000000 --open
 ```
 
 This will:
-1. Find all `z5*.pdf` files in the source directory
+1. Find all `doc*.pdf` files in the source directory
 2. Compress each individually (Ghostscript for digital, render for scanned)
 3. Auto-fit to budget by re-compressing largest files if needed
-4. Merge all into `z5f.pdf` and open in Preview
+4. Merge all into `docf.pdf` and open in Preview
 
 ### Compare compression methods
 
@@ -95,7 +97,7 @@ python compare.py -m 2 document.pdf
 
 4. **Navigate to this project**:
    ```bash
-   cd /path/to/compressor
+   cd compressor
    claude
    ```
 
@@ -113,13 +115,13 @@ Once inside Claude Code in this project directory:
 ```
 /compress scan.jpg -q 40
 /compress document.pdf -E gs -g -m 2
-/compress-AIMA ~/Documents/aima-docs --prefix z5 --budget-bytes 2000000
-/compress-AIMA ~/Documents/aima-docs --prefix z5 --scanned "z5.9 " --open
+/compress-AIMA ~/Documents/aima-docs --prefix doc --budget-bytes 2000000
+/compress-AIMA ~/Documents/aima-docs --prefix inv --scanned "inv.3 " --open
 ```
 
 ### Interactive workflow with `/compress-AIMA`
 
-1. Run `/compress-AIMA /path/to/docs --prefix z5 --budget-bytes 2000000`
+1. Run `/compress-AIMA ~/Documents/aima-docs --prefix doc --budget-bytes 2000000`
 2. Claude compresses each document, shows a size table
 3. If over budget, automatically re-compresses largest files
 4. Opens the merged PDF for visual verification
@@ -133,3 +135,19 @@ Once inside Claude Code in this project directory:
   - Claude Pro subscription ($20/month) or Claude Max ($100/month)
   - Anthropic API key with credits
 - All system dependencies listed above must be installed
+
+## Uso em Português
+
+Esta ferramenta comprime e unifica documentos PDF para upload no [portal de renovações AIMA](https://portal-renovacoes.aima.gov.pt) — o portal do governo português para renovação de autorização de residência.
+
+### Funcionalidades principais
+
+- **Comprimir ficheiro individual**: `python compress.py documento.pdf -g -m 2` — comprime para PDF em escala de cinza com máximo de 2 MB
+- **Comprimir lote para AIMA**: `python compress_aima.py ~/docs --prefix doc --budget-bytes 2000000` — comprime e unifica todos os PDFs num único ficheiro
+- **Motor Ghostscript**: `python compress.py -E gs documento.pdf` — preserva texto vetorial, ideal para documentos digitais
+
+### Requisitos
+
+```bash
+brew install python@3.13 imagemagick poppler ghostscript pdfcpu
+```

@@ -82,8 +82,8 @@ python compress_aima.py SOURCE_DIR [--prefix PREFIX] [--budget-bytes BYTES] [--d
 #### Examples
 
 ```bash
-python compress_aima.py ~/docs --prefix z5 --budget-bytes 2000000
-python compress_aima.py ~/docs --prefix z5 --scanned "z5.9 " --open
+python compress_aima.py ~/docs --prefix doc --budget-bytes 2000000
+python compress_aima.py ~/docs --prefix inv --scanned "inv.3 " --open
 python compress_aima.py ~/docs                                      # All PDFs, 2 MB budget
 ```
 
@@ -116,4 +116,4 @@ Versions produced: Python render (default), Python render+grayscale+enhance, Gho
 | Command | Description |
 |---------|-------------|
 | `/compress` | Compress individual files. Example: `/compress scan.jpg -q 40` |
-| `/compress-AIMA` | Batch-compress a folder of PDFs for AIMA portal upload. Example: `/compress-AIMA ~/docs --prefix z5 --budget-bytes 2000000` |
+| `/compress-AIMA` | Batch-compress a folder of PDFs for AIMA portal upload. Example: `/compress-AIMA ~/docs --prefix doc --budget-bytes 2000000` |

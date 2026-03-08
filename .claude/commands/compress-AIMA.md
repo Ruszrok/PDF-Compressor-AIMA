@@ -48,9 +48,9 @@ Follow these steps:
 
 ### Usage examples:
 ```
-/compress-AIMA ~/Documents/aima-docs --prefix z5 --budget-bytes 2000000
-/compress-AIMA ~/Documents/aima-docs --prefix z5 --budget-bytes 2000000 --scanned "z5.9 " --open
-/compress-AIMA /path/to/docs
+/compress-AIMA ~/Documents/aima-docs --prefix doc --budget-bytes 2000000
+/compress-AIMA ~/Documents/aima-docs --prefix inv --budget-bytes 2000000 --scanned "inv.3 " --open
+/compress-AIMA ~/Documents/aima-docs
 ```
 
 ### CLI flags for compress_aima.py:
