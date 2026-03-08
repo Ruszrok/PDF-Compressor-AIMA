@@ -69,7 +69,7 @@ def compress_pdf_lossless(input_path: Path, output_path: Path) -> bool:
     return False
 
 
-def compress_pdf_render(input_path: Path, output_path: Path, quality: int, dpi: int, grayscale: bool = False):
+def compress_pdf_render(input_path: Path, output_path: Path, quality: int, dpi: int, grayscale: bool = False, enhance: bool = False):
     """Render PDF pages to JPEG with pdftocairo, then reassemble with ImageMagick."""
     with tempfile.TemporaryDirectory() as tmpdir:
         # Render each page to JPEG
@@ -89,6 +89,14 @@ def compress_pdf_render(input_path: Path, output_path: Path, quality: int, dpi: 
         if not pages:
             raise RuntimeError(f"pdftocairo produced no output for {input_path}")
 
+        # Enhance pages for better text readability if requested
+        if enhance:
+            for page in pages:
+                subprocess.run(
+                    ["magick", str(page), "-normalize", "-sharpen", "0x1", str(page)],
+                    check=True, capture_output=True,
+                )
+
         # Assemble into multi-page PDF with ImageMagick
         cmd = ["magick"] + [str(p) for p in pages] + ["-quality", str(quality), str(output_path)]
         subprocess.run(cmd, check=True, capture_output=True)
@@ -101,13 +109,14 @@ def compress_pdf(
     dpi: int,
     force_render: bool,
     grayscale: bool = False,
+    enhance: bool = False,
 ):
     """Compress a PDF: try lossless first, fall back to lossy render."""
     if not force_render:
         if compress_pdf_lossless(input_path, output_path):
             return "lossless"
 
-    compress_pdf_render(input_path, output_path, quality, dpi, grayscale)
+    compress_pdf_render(input_path, output_path, quality, dpi, grayscale, enhance)
     return "rendered"
 
 
@@ -117,6 +126,7 @@ def compress_pdf_to_target(
     max_bytes: int,
     dpi: int,
     grayscale: bool = False,
+    enhance: bool = False,
 ):
     """Binary search for highest quality that fits under max_bytes.
 
@@ -127,7 +137,7 @@ def compress_pdf_to_target(
 
     while lo <= hi:
         mid = (lo + hi) // 2
-        compress_pdf_render(input_path, output_path, mid, dpi, grayscale)
+        compress_pdf_render(input_path, output_path, mid, dpi, grayscale, enhance)
         size = output_path.stat().st_size
         if size <= max_bytes:
             best_quality = mid
@@ -137,7 +147,80 @@ def compress_pdf_to_target(
 
     # Final render at best quality if needed
     if best_quality != mid:
-        compress_pdf_render(input_path, output_path, best_quality, dpi, grayscale)
+        compress_pdf_render(input_path, output_path, best_quality, dpi, grayscale, enhance)
+
+    return best_quality
+
+
+def compress_ghostscript(input_path: Path, output_path: Path, quality: int, dpi: int, grayscale: bool = False, preset: str = "/default"):
+    """Compress PDF using Ghostscript — preserves vector text, recompresses images only."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Copy input to temp dir to avoid Ghostscript path encoding issues
+        tmp_input = Path(tmpdir) / "input.pdf"
+        tmp_output = Path(tmpdir) / "output.pdf"
+        shutil.copy2(input_path, tmp_input)
+
+        cmd = [
+            "gs", "-sDEVICE=pdfwrite", "-dCompatibilityLevel=1.4",
+            "-dNOPAUSE", "-dBATCH", "-dQUIET",
+            f"-dPDFSETTINGS={preset}",
+            # Force image downsampling
+            "-dDownsampleColorImages=true",
+            "-dDownsampleGrayImages=true",
+            "-dDownsampleMonoImages=true",
+            f"-dColorImageResolution={dpi}",
+            f"-dGrayImageResolution={dpi}",
+            f"-dMonoImageResolution={dpi}",
+            "-dColorImageDownsampleType=/Bicubic",
+            "-dGrayImageDownsampleType=/Bicubic",
+            "-dColorImageDownsampleThreshold=1.0",
+            "-dGrayImageDownsampleThreshold=1.0",
+            "-dMonoImageDownsampleThreshold=1.0",
+            # JPEG compression for images
+            "-dAutoFilterColorImages=false",
+            "-dAutoFilterGrayImages=false",
+            "-dColorImageFilter=/DCTEncode",
+            "-dGrayImageFilter=/DCTEncode",
+            f"-dJPEGQ={quality}",
+            f"-sOutputFile={tmp_output}",
+        ]
+        if grayscale:
+            cmd += [
+                "-sColorConversionStrategy=Gray",
+                "-dProcessColorModel=/DeviceGray",
+            ]
+        cmd.append(str(tmp_input))
+        subprocess.run(cmd, check=True, capture_output=True)
+        shutil.copy2(tmp_output, output_path)
+
+
+def compress_ghostscript_to_target(
+    input_path: Path,
+    output_path: Path,
+    max_bytes: int,
+    dpi: int,
+    grayscale: bool = False,
+):
+    """Binary search for highest Ghostscript quality that fits under max_bytes.
+
+    Returns the quality value used.
+    """
+    lo, hi = 10, 80
+    best_quality = lo
+
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        compress_ghostscript(input_path, output_path, mid, dpi, grayscale)
+        size = output_path.stat().st_size
+        if size <= max_bytes:
+            best_quality = mid
+            lo = mid + 1
+        else:
+            hi = mid - 1
+
+    # Final render at best quality if needed
+    if best_quality != mid:
+        compress_ghostscript(input_path, output_path, best_quality, dpi, grayscale)
 
     return best_quality
 
@@ -181,9 +264,20 @@ def main():
         "-m", "--max-size", type=float, default=None,
         help="Target maximum file size in MB (auto-selects best quality)",
     )
+    parser.add_argument(
+        "-e", "--enhance", action="store_true",
+        help="Enhance text readability (normalize contrast + sharpen)",
+    )
+    parser.add_argument(
+        "-E", "--engine", choices=["auto", "render", "gs"], default="auto",
+        help="Compression engine: auto (default), render (pdftocairo), gs (Ghostscript)",
+    )
     args = parser.parse_args()
 
     check_dependencies()
+    if args.engine == "gs" and not shutil.which("gs"):
+        print("Error: Ghostscript (gs) not found. Install with: brew install ghostscript", file=sys.stderr)
+        sys.exit(1)
 
     results = []
 
@@ -208,19 +302,29 @@ def main():
 
         try:
             auto_quality = None
+            use_gs = args.engine == "gs" or (args.engine == "auto" and False)
             if ext in (".jpg", ".jpeg"):
                 compress_jpeg(input_path, output_path, args.quality, args.dpi)
                 method = "jpeg→pdf"
+            elif use_gs and args.max_size is not None:
+                max_bytes = int(args.max_size * 1024 * 1024)
+                auto_quality = compress_ghostscript_to_target(
+                    input_path, output_path, max_bytes, args.dpi, args.grayscale
+                )
+                method = "gs-autofit"
+            elif use_gs:
+                compress_ghostscript(input_path, output_path, args.quality, args.dpi, args.grayscale)
+                method = "ghostscript"
             elif args.max_size is not None:
                 max_bytes = int(args.max_size * 1024 * 1024)
                 auto_quality = compress_pdf_to_target(
-                    input_path, output_path, max_bytes, args.dpi, args.grayscale
+                    input_path, output_path, max_bytes, args.dpi, args.grayscale, args.enhance
                 )
                 method = "auto-fit"
             else:
                 method = compress_pdf(
                     input_path, output_path, args.quality, args.dpi,
-                    args.force_render, args.grayscale,
+                    args.force_render, args.grayscale, args.enhance,
                 )
 
             compressed_size = output_path.stat().st_size

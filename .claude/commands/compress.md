@@ -19,7 +19,10 @@ Follow these steps:
 3. Report the results to the user, including file sizes and reduction percentages.
 
 4. Suggest adjustments if needed:
-   - For more compression: try `-q 40`
-   - For better quality: try `-q 75`
+   - For more compression: try `-q 40` or `-g` (grayscale)
+   - For better quality: try `-q 75 -d 200`
    - To force lossy rendering on PDFs: use `--force-render`
    - To change resolution: use `-d 100` (lower) or `-d 200` (higher)
+   - To auto-fit to a size limit: use `-m 2` (2 MB target)
+   - For text-heavy docs (preserves vector text): use `-E gs`
+   - For batch AIMA portal submissions: use `/compress-AIMA` instead
